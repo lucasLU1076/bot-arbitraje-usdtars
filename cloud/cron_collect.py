@@ -47,13 +47,13 @@ CREATE TABLE IF NOT EXISTS run_log (
 """
 
 
-def http_get_json(url: str) -> dict:
+def http_get_json(url):
     req = urllib.request.Request(url, headers={"User-Agent": "bot-arbitraje-collector/1.0"})
     with urllib.request.urlopen(req, timeout=20) as resp:
         return json.loads(resp.read().decode("utf-8"))
 
 
-def fetch_trades(marker: str | None, sort: str) -> list[dict]:
+def fetch_trades(marker, sort):
     url = f"{BASE_URL}/trades?book={BOOK}&limit=100&sort={sort}"
     if marker:
         url += f"&marker={marker}"
@@ -61,7 +61,7 @@ def fetch_trades(marker: str | None, sort: str) -> list[dict]:
     return data.get("payload", [])
 
 
-def main() -> None:
+def main():
     conn = sqlite3.connect(str(DB_PATH))
     conn.executescript(SCHEMA)
 
