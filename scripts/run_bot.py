@@ -30,6 +30,7 @@ from bitso_client import BitsoClient
 from data_store import DataStore
 from live_engine import LiveEngine
 from risk_manager import RiskLimits, RiskManager
+from sheets_logger import SheetsLogger
 from strategy import StrategyConfig
 
 
@@ -110,10 +111,19 @@ def main() -> None:
     else:
         print("Modo DRY-RUN (simulado): no se enviara ninguna orden real.")
 
+    sheets = SheetsLogger(
+        webhook_url=os.environ.get("SHEETS_WEBHOOK_URL") or None,
+        token=os.environ.get("SHEETS_WEBHOOK_TOKEN") or None,
+    )
+    if sheets.enabled:
+        print("Registro en Google Sheet: ACTIVADO.")
+    else:
+        print("Registro en Google Sheet: desactivado (falta SHEETS_WEBHOOK_URL / SHEETS_WEBHOOK_TOKEN en .env).")
+
     engine = LiveEngine(
         book=book, client=client, store=store, risk_manager=risk_manager,
         strategy_cfg=strategy_cfg, is_live=is_live,
-        poll_seconds=cfg["data"]["trades_poll_seconds"],
+        poll_seconds=cfg["data"]["trades_poll_seconds"], sheets=sheets,
     )
 
     try:

@@ -29,7 +29,7 @@ import strategy as strat
 class LiveEngine:
     def __init__(self, book: str, client: BitsoClient, store: DataStore,
                  risk_manager: RiskManager, strategy_cfg: strat.StrategyConfig,
-                 is_live: bool, poll_seconds: float = 5.0):
+                 is_live: bool, poll_seconds: float = 5.0, sheets=None):
         self.book = book
         self.client = client
         self.store = store
@@ -37,6 +37,7 @@ class LiveEngine:
         self.scfg = strategy_cfg
         self.is_live = is_live
         self.poll_seconds = poll_seconds
+        self.sheets = sheets  # SheetsLogger opcional; None = no registra en Google Sheets
 
         self._last_tid: int | None = store.last_trade_tid(book)
         self._window_trades: list[tuple[datetime, float, float]] = []
@@ -141,6 +142,35 @@ class LiveEngine:
         row = rows[0]
         return {"status": row["status"], "unfilled_amount": float(row.get("unfilled_amount", 0.0))}
 
+    # --------------------------------------------------------- Google Sheet
+
+    def _sheet_row_from_trade(self, trade: dict, **overrides) -> dict:
+        entry_price = trade.get("entry_price")
+        amount_major = trade.get("amount_major")
+        exit_price = trade.get("exit_price")
+        pnl_ars = trade.get("pnl_ars")
+        pnl_pct = trade.get("pnl_pct")
+        row = {
+            "fecha_apertura": trade.get("opened_at") or "",
+            "fecha_cierre": trade.get("closed_at") or "",
+            "modo": "LIVE" if self.is_live else "DRY-RUN",
+            "lado": "compra",
+            "precio_referencia": "",
+            "precio_entrada": f"{entry_price:.2f}" if entry_price is not None else "",
+            "precio_objetivo": "",
+            "precio_cierre": f"{exit_price:.2f}" if exit_price is not None else "",
+            "motivo_cierre": trade.get("exit_reason") or "",
+            "monto_ars": f"{amount_major * entry_price:.2f}" if amount_major and entry_price else "",
+            "cantidad_usdt": f"{amount_major:.4f}" if amount_major is not None else "",
+            "fee_estimado_ars": "",
+            "pnl_ars": f"{pnl_ars:.2f}" if pnl_ars is not None else "",
+            "pnl_pct": f"{pnl_pct:+.2f}" if pnl_pct is not None else "",
+            "oid": trade.get("sell_oid") or trade.get("buy_oid") or "",
+            "notas": "",
+        }
+        row.update(overrides)
+        return row
+
     # -------------------------------------------------------------- ciclo
 
     def _manage_pending_buy(self, trade: dict, last_price: float | None) -> None:
@@ -159,6 +189,13 @@ class LiveEngine:
             target = strat.take_profit_price(self.scfg, trade["entry_price"])
             sell_oid = self._place_sell(target, amount_major)
             self.store.update_trade(trade["id"], status="open", sell_oid=sell_oid)
+            if self.sheets and trade.get("sheet_row"):
+                updated = dict(trade, sell_oid=sell_oid)
+                row = self._sheet_row_from_trade(
+                    updated, precio_objetivo=f"{target:.2f}",
+                    notas="compra llenada, esperando take-profit",
+                )
+                self.sheets.update_row(trade["sheet_row"], row)
             self._log(
                 f"COMPRA LLENADA a ~{trade['entry_price']:.2f}. Vendiendo en {target:.2f} "
                 f"(+{self.scfg.take_profit_pct:.2f}%). oid venta={sell_oid}"
@@ -169,6 +206,12 @@ class LiveEngine:
             self._cancel_order(trade["buy_oid"])
             self.store.update_trade(trade["id"], status="cancelled", closed_at=now.isoformat(),
                                      exit_reason="timeout")
+            if self.sheets and trade.get("sheet_row"):
+                updated = dict(trade, closed_at=now.isoformat(), exit_reason="timeout")
+                row = self._sheet_row_from_trade(
+                    updated, notas="orden de compra cancelada (no se lleno a tiempo)",
+                )
+                self.sheets.update_row(trade["sheet_row"], row)
             self._log(f"Compra pendiente #{trade['id']} cancelada por timeout sin llenarse.")
 
     def _manage_open_position(self, trade: dict, last_price: float | None) -> None:
@@ -226,6 +269,15 @@ class LiveEngine:
             trade["id"], status="closed", closed_at=now.isoformat(),
             exit_price=exit_price, pnl_ars=pnl_ars, pnl_pct=pnl_pct, exit_reason=exit_reason,
         )
+        if self.sheets and trade.get("sheet_row"):
+            fee_total_ars = (amount_major * trade["entry_price"] * buy_fee_pct / 100
+                              + amount_major * exit_price * sell_fee_pct / 100)
+            updated = dict(trade, closed_at=now.isoformat(), exit_price=exit_price,
+                           pnl_ars=pnl_ars, pnl_pct=pnl_pct, exit_reason=exit_reason)
+            row = self._sheet_row_from_trade(
+                updated, fee_estimado_ars=f"{fee_total_ars:.2f}", notas="cerrada",
+            )
+            self.sheets.update_row(trade["sheet_row"], row)
         self._log(
             f"Posicion #{trade['id']} CERRADA ({exit_reason}): entrada {trade['entry_price']:.2f} -> "
             f"salida {exit_price:.2f} | PnL {pnl_ars:.2f} ARS ({pnl_pct:+.2f}%)"
@@ -258,6 +310,18 @@ class LiveEngine:
             amount_major=amount_major,
             opened_at=now.isoformat(),
         )
+        if self.sheets:
+            provisional = {
+                "opened_at": now.isoformat(), "entry_price": signal.entry_price,
+                "amount_major": amount_major, "buy_oid": buy_oid,
+            }
+            row = self._sheet_row_from_trade(
+                provisional, precio_referencia=f"{signal.reference_price:.2f}",
+                notas="compra limite colocada, esperando llenado",
+            )
+            sheet_row = self.sheets.append_row(row)
+            if sheet_row:
+                self.store.update_trade(trade_id, sheet_row=sheet_row)
         self._log(
             f"MECHAZO detectado: ref={signal.reference_price:.2f} low={signal.low_price:.2f} "
             f"(-{signal.drop_pct:.2f}%). Compra limite #{trade_id} en {signal.entry_price:.2f} "

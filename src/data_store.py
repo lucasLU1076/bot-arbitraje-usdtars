@@ -65,7 +65,8 @@ CREATE TABLE IF NOT EXISTS trade_log (
     pnl_ars REAL,
     pnl_pct REAL,
     exit_reason TEXT,                -- 'take_profit' | 'hard_stop' | 'timeout' | 'manual'
-    status TEXT NOT NULL              -- 'pending_buy' | 'open' | 'closed' | 'cancelled'
+    status TEXT NOT NULL,              -- 'pending_buy' | 'open' | 'closed' | 'cancelled'
+    sheet_row INTEGER                 -- fila en el Google Sheet (si el registro esta activado)
 );
 """
 
@@ -76,6 +77,10 @@ class DataStore:
         self._path = path
         with self._connect() as conn:
             conn.executescript(SCHEMA)
+            try:
+                conn.execute("ALTER TABLE trade_log ADD COLUMN sheet_row INTEGER")
+            except sqlite3.OperationalError:
+                pass  # ya existia (DB creada antes de agregar esta columna)
 
     @contextmanager
     def _connect(self):
