@@ -1,0 +1,68 @@
+# Configuracion del bot. Todo lo que afecta dinero real vive aca, nunca hardcodeado en el codigo.
+
+exchange:
+  book: "usdt_ars"
+  base_url: "https://api.bitso.com/v3"
+  ws_url: "wss://ws.bitso.com"
+
+mode:
+  # Traba #1: mientras sea true, el bot JAMAS envia ordenes reales (solo las simula en memoria/log).
+  dry_run: true
+  # Traba #2: ademas de dry_run=false aca, se exige BITSO_LIVE_CONFIRM=YES en .env.
+  # Las dos trabas tienen que estar alineadas para que una orden real salga.
+  require_env_confirmation: true
+
+capital:
+  # Tamano fijo por operacion, en ARS. Arranca chico (pedido del usuario: 50.000-100.000 ARS).
+  position_size_ars: 75000
+  # Una sola posicion abierta a la vez mientras se valida la estrategia. No pirca, no apalancamiento.
+  max_concurrent_positions: 1
+  # Si las perdidas realizadas en el dia superan este % del capital asignado, el bot se detiene solo
+  # y no vuelve a operar hasta reinicio manual (kill switch).
+  max_daily_loss_pct: 1.5
+  # Limite duro de operaciones por dia, para evitar overtrading si el filtro de patrones falla.
+  max_daily_trades: 6
+
+strategy:
+  # Ventana (minutos) usada para calcular el precio de referencia (VWAP) ANTES del mechazo.
+  reference_window_minutes: 30
+  # Caida minima desde la referencia para considerar que hubo un "mechazo" comprable.
+  wick_drop_threshold_pct: 2.0
+  # La compra limite se coloca apenas por encima del minimo detectado, para tener prioridad
+  # de ejecucion sin pagar de mas ("entry_offset_pct" por encima del low del mechazo).
+  entry_offset_pct: 0.1
+  # Objetivo de venta sobre el precio de entrada (antes de validar que cubra comisiones, ver abajo).
+  take_profit_pct: 2.5
+  # Chequeo de seguridad: take_profit_pct debe superar (comision ida + comision vuelta + este minimo).
+  # Si no se cumple, la estrategia NO opera esa senal (evita "ganar" en bruto y perder en neto).
+  min_net_profit_after_fees_pct: 1.0
+  # Si la compra limite no se llena en este tiempo, se cancela. Nunca se persigue el precio subiendo
+  # el precio de compra (eso rompe el caracter conservador de la estrategia).
+  buy_order_timeout_seconds: 90
+  # Tiempo maximo sosteniendo una posicion abierta antes de evaluar salida de emergencia.
+  max_holding_minutes: 240
+  # Red de seguridad dura. La estrategia NUNCA promete cero perdidas: los mercados pueden no revertir.
+  # Si el precio cae esto por debajo del precio de entrada, se vende para cortar la cola de riesgo.
+  hard_stop_loss_pct: 4.0
+  # Tiempo de enfriamiento despues de cerrar una operacion (gane o pierda) antes de buscar la proxima.
+  cooldown_minutes_after_trade: 15
+  # Horas (0-23, hora Argentina) en las que el filtro de patrones historicos permite operar.
+  # Se completa corriendo scripts/analyze_patterns.py. Vacio = sin filtro horario (modo exploracion/backtest).
+  allowed_hours_ars_tz: []
+  # No confiar en una hora del filtro horario hasta tener al menos esta cantidad de mechazos
+  # historicos observados en ella (evita sobreajustar a 2 o 3 eventos de pura casualidad).
+  min_hourly_sample_size: 20
+
+fees:
+  # Defaults tomados de /v3/available_books para usdt_ars (tier mas bajo). Verificalos en tu
+  # panel de Bitso (Cuenta > Comisiones) porque dependen de tu volumen de 30 dias.
+  maker_pct: 0.45
+  taker_pct: 0.60
+
+data:
+  sqlite_path: "data/market_data.db"
+  trades_poll_seconds: 5
+
+logging:
+  dir: "logs"
+  level: "INFO"
