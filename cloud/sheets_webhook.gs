@@ -11,8 +11,9 @@
 //      tu propio script, no comparte nada con nadie mas).
 //   7. Copiar la URL que te da ("URL de la aplicacion web") y pasarsela a Claude.
 //
-// El token de abajo ya viene generado; no hace falta cambiarlo.
-var SECRET_TOKEN = "rZUzXOmsL8HfKpn7qcsj0xlYBIURLtTT";
+// IMPORTANTE: reemplazar por el valor real de SHEETS_WEBHOOK_TOKEN (ver .env,
+// que esta en .gitignore y nunca se sube al repo). Este archivo es publico.
+var SECRET_TOKEN = "REEMPLAZAR_CON_EL_TOKEN_DE_.ENV";
 
 function doPost(e) {
   try {
