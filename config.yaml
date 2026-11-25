@@ -24,21 +24,30 @@ capital:
   max_daily_trades: 6
 
 strategy:
+  # --- CALIBRACION DEMO (24/11) ---
+  # Con el umbral original de 2.0% el bot paso ~10hs sin disparar ni una sola senal
+  # (el precio se movio ~4.6% pero de forma gradual, nunca de golpe). Bajamos el
+  # umbral y el take-profit para validar en dry-run que todo el circuito funciona
+  # (senal -> compra simulada -> venta simulada -> cierre -> registro en Sheet).
+  # Sigue pasando el chequeo de rentabilidad neta (ver min_net_profit_after_fees_pct).
+  # ANTES de operar con plata real hay que volver a valores mas exigentes
+  # (umbral >=2%, take-profit >=2.5%) validados con mas datos/backtest.
+  #
   # Ventana (minutos) usada para calcular el precio de referencia (VWAP) ANTES del mechazo.
-  reference_window_minutes: 30
+  reference_window_minutes: 15
   # Caida minima desde la referencia para considerar que hubo un "mechazo" comprable.
-  wick_drop_threshold_pct: 2.0
+  wick_drop_threshold_pct: 0.5
   # La compra limite se coloca apenas por encima del minimo detectado, para tener prioridad
   # de ejecucion sin pagar de mas ("entry_offset_pct" por encima del low del mechazo).
   entry_offset_pct: 0.1
   # Objetivo de venta sobre el precio de entrada (antes de validar que cubra comisiones, ver abajo).
-  take_profit_pct: 2.5
+  take_profit_pct: 1.5
   # Chequeo de seguridad: take_profit_pct debe superar (comision ida + comision vuelta + este minimo).
   # Si no se cumple, la estrategia NO opera esa senal (evita "ganar" en bruto y perder en neto).
-  min_net_profit_after_fees_pct: 1.0
+  min_net_profit_after_fees_pct: 0.5
   # Si la compra limite no se llena en este tiempo, se cancela. Nunca se persigue el precio subiendo
   # el precio de compra (eso rompe el caracter conservador de la estrategia).
-  buy_order_timeout_seconds: 90
+  buy_order_timeout_seconds: 180
   # Tiempo maximo sosteniendo una posicion abierta antes de evaluar salida de emergencia.
   max_holding_minutes: 240
   # Red de seguridad dura. La estrategia NUNCA promete cero perdidas: los mercados pueden no revertir.
